@@ -104,7 +104,14 @@ CHECK_INCLUDE_FILES("sys/types.h;sys/stat.h;unistd.h" NEEDED_HEADERS_PRESENT LAN
 
 set(Source_dir "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-find_package (FUSE REQUIRED)
+find_package(PkgConfig)
+
+if(PkgConfig_FOUND)
+	pkg_check_modules(FUSE REQUIRED fuse)
+else(PkgConfig_FOUND)
+	find_package(FUSE REQUIRED)
+endif()
+
 #add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 
 set(CMake_Misc_Dir "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
