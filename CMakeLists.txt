@@ -89,7 +89,7 @@ endif(GIT_FOUND)
 set(fuse-7z-ng_VERSION "${VERSION_EXPORT} ${VERSION_FROM_GIT}")
 message(STATUS "version tag: ${fuse-7z-ng_VERSION}")
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darvin")
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
     set(MACOS TRUE)
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(LINUX TRUE)
