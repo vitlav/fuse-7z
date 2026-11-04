@@ -85,15 +85,32 @@ Fuse7z::Fuse7z(std::string const & filename, std::string const & cwd) :
     std::istringstream listing(output);
     std::vector<ArchiveEntry> entries = parse_7z_listing(listing);
     logger << "Archive contains " << entries.size() << " entries" << Logger::endl;
+    size_t skipped = 0;
     for (ArchiveEntry const & entry : entries) {
-        add_entry(entry);
+        if (!add_entry(entry)) {
+            ++skipped;
+        }
+    }
+    if (skipped) {
+        Logger::instance().err("fuse-7z-ng: skipped " + std::to_string(skipped) +
+                               " unsafe or unsupported archive entries");
     }
 }
 
-void Fuse7z::add_entry(ArchiveEntry const & entry) {
-    std::vector<std::string> components = split_archive_path(entry.path);
+bool Fuse7z::add_entry(ArchiveEntry const & entry) {
+    Logger &logger = Logger::instance ();
+    std::vector<std::string> components;
+    if (!normalize_archive_path(entry.path, components)) {
+        logger << "Skipping entry with unsafe path " << entry.path << Logger::endl;
+        return false;
+    }
     if (components.empty()) {
-        return;
+        // the root directory itself, as stored by tar
+        return true;
+    }
+    if (!is_supported_entry(entry)) {
+        logger << "Skipping link or special file " << entry.path << Logger::endl;
+        return false;
     }
 
     Node * node = root_node;
@@ -101,6 +118,16 @@ void Fuse7z::add_entry(ArchiveEntry const & entry) {
         nodelist_t::iterator found = node->childs.find(components[i].c_str());
         if (found != node->childs.end()) {
             node = found->second;
+            bool last = (i + 1 == components.size());
+            if (!last && !node->is_dir) {
+                logger << "Skipping " << entry.path << ": a parent is a file" << Logger::endl;
+                return false;
+            }
+            if (last && (!node->is_dir || !entry.is_dir)) {
+                // the same file twice, or a file and a directory with the same name
+                logger << "Skipping duplicate entry " << entry.path << Logger::endl;
+                return false;
+            }
             continue;
         }
         Node * child = new Node(node, components[i].c_str());
@@ -125,6 +152,7 @@ void Fuse7z::add_entry(ArchiveEntry const & entry) {
         node->stat.st_atim = node->stat.st_mtim;
         node->stat.st_ctim = node->stat.st_mtim;
     }
+    return true;
 }
 
 Fuse7z::~Fuse7z() {

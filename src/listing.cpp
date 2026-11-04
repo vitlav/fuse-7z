@@ -197,10 +197,14 @@ parse_7z_listing (std::istream & in)
     return entries;
 }
 
-std::vector<std::string>
-split_archive_path (std::string const & path)
+bool
+normalize_archive_path (std::string const & path, std::vector<std::string> & components)
 {
-    std::vector<std::string> components;
+    components.clear();
+    if (path.empty() || path[0] == '/') {
+        return false;
+    }
+
     size_t start = 0;
     while (start <= path.size()) {
         size_t end = path.find('/', start);
@@ -208,10 +212,26 @@ split_archive_path (std::string const & path)
             end = path.size();
         }
         std::string component = path.substr(start, end - start);
+        if (component == "..") {
+            components.clear();
+            return false;
+        }
         if (!component.empty() && component != ".") {
             components.push_back(component);
         }
         start = end + 1;
     }
-    return components;
+    return true;
+}
+
+bool
+is_supported_entry (ArchiveEntry const & entry)
+{
+    if (!entry.symlink.empty() || !entry.hardlink.empty()) {
+        return false;
+    }
+    if (entry.type == 0) {
+        return true;
+    }
+    return entry.type == (entry.is_dir ? 'd' : '-');
 }

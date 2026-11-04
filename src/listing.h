@@ -65,6 +65,14 @@ bool parse_7z_time(std::string const & text, time_t & seconds, long & nsec);
 
 /**
  * Split a member name into path components, dropping empty and "."
- * components.
+ * components. Returns false for names that could point outside of
+ * the archive: absolute paths and paths with ".." components.
+ * The components are empty for the archive root ("." or "./").
  */
-std::vector<std::string> split_archive_path(std::string const & path);
+bool normalize_archive_path(std::string const & path, std::vector<std::string> & components);
+
+/**
+ * Whether the member can be shown as a regular file or a directory.
+ * Symbolic and hard links, devices, FIFOs and sockets can not.
+ */
+bool is_supported_entry(ArchiveEntry const & entry);

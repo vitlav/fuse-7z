@@ -38,7 +38,7 @@ class Fuse7z
 {
 	SevenZip sevenzip;
 
-	void add_entry(ArchiveEntry const & entry);
+	bool add_entry(ArchiveEntry const & entry);
 
 	public:
 	Fuse7z(std::string const & filename, std::string const & cwd);
