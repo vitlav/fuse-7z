@@ -1,6 +1,6 @@
 *~
 .lock*
-build*
+/build*/
 .hg
 .*.swp
 *.o
