@@ -56,11 +56,12 @@ void print_usage()
 }
 
 /**
- * Print version information (fuse-zip and FUSE library)
+ * Print version information (fuse-7z-ng and FUSE library)
  */
 void print_version()
 {
     printf ("fuse-7z-ng version: %s\n", VERSION);
+    printf ("FUSE library version: %s\n", fuse_pkgversion());
 }
 
 /**
@@ -198,7 +199,7 @@ main (int argc, char **argv)
     if (param.help || param.version)
     {
         fuse_opt_free_args(&args);
-        return 3;
+        return 0;
     }
 
     char cwd[PATH_MAX+1];
