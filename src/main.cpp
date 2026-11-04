@@ -41,7 +41,7 @@
  */
 void print_usage()
 {
-    printf ("usage: fuse-7z-ng [options] <zip-file> <mountpoint>\n\n"
+    printf ("usage: fuse-7z-ng [options] <archive> <mountpoint>\n\n"
             "general options:\n"
             "    -o opt,[opt...]        mount options\n"
             "    -h   --help            print help\n"
@@ -264,6 +264,8 @@ main (int argc, char **argv)
 
     // the archive backend is not thread safe, use the single threaded loop
     fuse_opt_add_arg(&args, "-s");
+    // writing is not supported
+    fuse_opt_add_arg(&args, "-oro");
 
     int res = fuse_main(args.argc, args.argv, &fuse7z_oper, data);
 
