@@ -53,6 +53,8 @@ Archive members are untrusted: members with absolute names or ".."
 components, symbolic and hard links, devices, FIFOs and sockets are not
 shown, and their number is printed at mount time. Permissions and
 modification times are taken from the archive when it stores them.
+p7zip 16.02 does not report the file type of tar members, so with it
+devices and FIFOs in tar archives are shown as empty files.
 
 Requirements
 ============

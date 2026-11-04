@@ -33,7 +33,8 @@ struct ArchiveEntry
     std::string path;
     bool is_dir = false;
     // file type from the Unix mode: '-', 'd', 'l', 'c', 'b', 'p', 's',
-    // or 0 if the archive has no Unix mode for the member
+    // or 0 if the archive has no Unix mode for the member; an unknown
+    // type ('0' from p7zip) is replaced by the folder flag
     char type = 0;
     // permission bits, valid if type != 0
     mode_t mode = 0;

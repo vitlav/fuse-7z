@@ -250,6 +250,38 @@ test_parse_tar ()
     CHECK(!is_supported_entry(entries[4]));
 }
 
+// `7z l -slt` of a GNU tar archive by p7zip 16.02, which has no
+// file type in the mode
+static char const listing_tar_p7zip[] =
+    "----------\n"
+    "Path = dir\n"
+    "Folder = +\n"
+    "Mode = 0rwxr-x---\n"
+    "\n"
+    "Path = dir/a\n"
+    "Folder = -\n"
+    "Size = 2\n"
+    "Mode = 0rw-r-----\n"
+    "Symbolic Link = \n"
+    "Hard Link = \n";
+
+static void
+test_parse_tar_p7zip ()
+{
+    std::vector<ArchiveEntry> entries = parse(listing_tar_p7zip);
+    CHECK_EQ(entries.size(), 2u);
+    if (entries.size() != 2) {
+        return;
+    }
+    CHECK(entries[0].is_dir);
+    CHECK_EQ(entries[0].type, 'd');
+    CHECK_EQ(entries[0].mode, static_cast<mode_t>(0750));
+    CHECK(is_supported_entry(entries[0]));
+    CHECK_EQ(entries[1].type, '-');
+    CHECK_EQ(entries[1].mode, static_cast<mode_t>(0640));
+    CHECK(is_supported_entry(entries[1]));
+}
+
 static void
 test_parse_edge_cases ()
 {
@@ -379,6 +411,7 @@ main ()
     RUN_TEST(test_parse_7z);
     RUN_TEST(test_parse_zip);
     RUN_TEST(test_parse_tar);
+    RUN_TEST(test_parse_tar_p7zip);
     RUN_TEST(test_parse_edge_cases);
     RUN_TEST(test_mode_string);
     RUN_TEST(test_time);

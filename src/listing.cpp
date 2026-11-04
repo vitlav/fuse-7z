@@ -26,7 +26,8 @@
 bool
 parse_mode_string (std::string const & text, char & type, mode_t & mode)
 {
-    if (text.size() != 10 || std::strchr("-dlcbps", text[0]) == nullptr) {
+    // p7zip 16.02 prints "0" as the file type of tar members
+    if (text.size() != 10 || std::strchr("-dlcbps0", text[0]) == nullptr) {
         return false;
     }
 
@@ -136,6 +137,19 @@ apply_property (ArchiveEntry & entry, std::string const & key, std::string const
     }
 }
 
+static void
+add_entry (std::vector<ArchiveEntry> & entries, ArchiveEntry & entry)
+{
+    if (entry.path.empty()) {
+        return;
+    }
+    if (entry.type == '0') {
+        // unknown file type: trust the folder flag
+        entry.type = entry.is_dir ? 'd' : '-';
+    }
+    entries.push_back(entry);
+}
+
 std::vector<ArchiveEntry>
 parse_7z_listing (std::istream & in)
 {
@@ -164,8 +178,8 @@ parse_7z_listing (std::istream & in)
             line.pop_back();
         }
         if (line.empty()) {
-            if (has_properties && !entry.path.empty()) {
-                entries.push_back(entry);
+            if (has_properties) {
+                add_entry(entries, entry);
             }
             entry = ArchiveEntry();
             has_properties = false;
@@ -183,16 +197,14 @@ parse_7z_listing (std::istream & in)
         }
         if (key == "Path" && has_properties) {
             // no empty line between two members
-            if (!entry.path.empty()) {
-                entries.push_back(entry);
-            }
+            add_entry(entries, entry);
             entry = ArchiveEntry();
         }
         apply_property(entry, key, value);
         has_properties = true;
     }
-    if (has_properties && !entry.path.empty()) {
-        entries.push_back(entry);
+    if (has_properties) {
+        add_entry(entries, entry);
     }
     return entries;
 }
