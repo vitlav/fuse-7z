@@ -6,6 +6,12 @@ include(CheckIncludeFiles)
 PROJECT(fuse-7z-ng)
 set(CMAKE_USE_RELATIVE_PATHS TRUE)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+include(GNUInstallDirs)
+
 FIND_PACKAGE(Git)
 if(GIT_FOUND)
   execute_process(
@@ -139,13 +145,13 @@ endif()
 
 # config.h
 set(CONFIG_FILENAME "config.h")
-set(CONFIG_FILE "${Source_dir}/${CONFIG_FILENAME}")
+set(CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_FILENAME}")
 mark_as_advanced(CONFIG_FILE)
 set(CONFIG_FILE_PROTO "${CMake_Misc_Dir}/${CONFIG_FILENAME}.in")
 
 set(FUSE_USE_VERSION 28 CACHE INTEGER "Service name")
 set(fuse_7z_ng_PACKAGE_NAME "${PACKAGE_NAME}" CACHE STRING "Service name")
-set(fuse_7z_ng_STANDARD_BLOCK_SIZE 512 CACHE INTEGER "Block size")
+set(fuse_7z_ng_STANDARD_BLOCK_SIZE 512 CACHE STRING "Block size")
 
 message(STATUS "generating config: ${CONFIG_FILE_PROTO} -> ${CONFIG_FILE}")
 configure_file(${CONFIG_FILE_PROTO} ${CONFIG_FILE})
@@ -160,7 +166,8 @@ message(STATUS "lib7zip lib is ${lib7zip_lib}")
 message(STATUS "lib7zip include dir is ${lib7zip_includeDir}")
 
 add_executable(fuse_7z_ng "${SRCFILES}" "${HDRFILES}" "${win_syslog_sources}" "${resource_files}")
-target_include_directories(fuse_7z_ng PUBLIC "${lib7zip_includeDir}" "${win_syslog_dir}" "${FUSE_INCLUDE_DIR}")
+set_target_properties(fuse_7z_ng PROPERTIES OUTPUT_NAME "${PACKAGE_NAME}")
+target_include_directories(fuse_7z_ng PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${lib7zip_includeDir}" "${win_syslog_dir}" "${FUSE_INCLUDE_DIR}")
 
 target_link_libraries(fuse_7z_ng ${lib7zip_lib} "${FUSE_LIBRARIES}")
 
@@ -172,20 +179,19 @@ endif(WINDOWS)
 
 add_definitions("-D_FILE_OFFSET_BITS=64")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    #-fstack-protector-strong causes crash
-    #-flto
-    #-pie
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wconversion -Wformat -Werror=format-security")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing -mmitigate-rop -fno-common -fstack-check")
-    add_definitions("-D_FORTIFY_SOURCE=2")
-    
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcet -fsanitize=cfi")
-    endif()
-    set_target_properties(fuse_7z_ng PROPERTIES LINK_FLAGS "-Wl,-O1,--sort-common,--as-needed,--dynamicbase,--nxcompat,--export-all-symbols,-flto")
-    
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set_target_properties(fuse_7z_ng PROPERTIES LINK_FLAGS "-Wl,--image-base,0x140000000")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing -fno-common")
+
+    if(WINDOWS)
+        # PE/COFF hardening, these flags are not understood by ELF linkers
+        if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcet -fsanitize=cfi")
+        endif()
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            set_target_properties(fuse_7z_ng PROPERTIES LINK_FLAGS "-Wl,--dynamicbase,--nxcompat,--image-base,0x140000000")
+        else()
+            set_target_properties(fuse_7z_ng PROPERTIES LINK_FLAGS "-Wl,--dynamicbase,--nxcompat")
+        endif()
     endif()
 elseif(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /sdl /GS /SafeSEH /NXCOMPAT /dynamicbase /guard:cf /HIGHENTROPYVA")
@@ -200,8 +206,6 @@ endif()
 
 if(MSVC)
     set_source_files_properties(${SRCFILES} PROPERTIES LANGUAGE CXX)
-else(MSVC)
-    #set_source_files_properties(${SRCFILES} PROPERTIES LANGUAGE CXX)
 endif(MSVC)
 
-#target_compile_features(fuse_7z_ng PUBLIC cxx_decltype_auto)
+install(TARGETS fuse_7z_ng RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
