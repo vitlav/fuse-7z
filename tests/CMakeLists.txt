@@ -16,4 +16,9 @@ add_executable(test_backend test_backend.cpp)
 target_link_libraries(test_backend fuse7z_backend)
 add_test(NAME backend COMMAND test_backend WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-set_tests_properties(backend PROPERTIES SKIP_RETURN_CODE 77)
+# Mounting archives, skipped without /dev/fuse, fusermount3 or 7-Zip
+add_test(NAME integration
+         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/integration-test.sh" $<TARGET_FILE:fuse_7z_ng>)
+
+set_tests_properties(backend integration PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(integration PROPERTIES TIMEOUT 300)
