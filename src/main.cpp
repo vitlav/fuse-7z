@@ -46,9 +46,12 @@ void print_usage()
             "    -o opt,[opt...]        mount options\n"
             "    -h   --help            print help\n"
             "    -V   --version         print version\n"
-            "    -r   -o ro             open archive in read-only mode\n"
+            "    -v   --verbose         print debug messages\n"
+            "    --automount            create the mountpoint if it does not exist\n"
+            "    --syslog               log to syslog instead of stderr\n"
             "    -f                     don't detach from terminal\n"
-            "    -d                     turn on debugging, also implies -f\n"
+            "    -d                     turn on FUSE debugging and verbose\n"
+            "                           messages, also implies -f\n"
             "\n");
 }
 
@@ -83,7 +86,9 @@ enum key:uint8_t{
  KEY_HELP=0,
  KEY_VERSION=1,
  KEY_AUTO=2,
- KEY_SYSLOG=3
+ KEY_SYSLOG=3,
+ KEY_VERBOSE=4,
+ KEY_DEBUG=5
 };
 
 static const struct fuse_opt fuse7z_opts[] =
@@ -94,6 +99,9 @@ static const struct fuse_opt fuse7z_opts[] =
     FUSE_OPT_KEY ("--version", KEY_VERSION),
     FUSE_OPT_KEY ("--automount", KEY_AUTO),
     FUSE_OPT_KEY ("--syslog", KEY_SYSLOG),
+    FUSE_OPT_KEY ("-v", KEY_VERBOSE),
+    FUSE_OPT_KEY ("--verbose", KEY_VERBOSE),
+    FUSE_OPT_KEY ("-d", KEY_DEBUG),
     FUSE_OPT_KEY (nullptr, 0)
 };
 
@@ -142,6 +150,16 @@ process_arg (
         case KEY_SYSLOG:
             Logger::instance ().enableSyslog (true);
             return DISCARD;
+
+        case KEY_VERBOSE:
+            param->verbose = 1;
+            Logger::instance ().enableVerbose (true);
+            return DISCARD;
+
+        case KEY_DEBUG:
+            param->verbose = 1;
+            Logger::instance ().enableVerbose (true);
+            return KEEP;
 
         case FUSE_OPT_KEY_NONOPT:
             ++param->strArgCount;

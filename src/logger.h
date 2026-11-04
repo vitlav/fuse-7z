@@ -26,6 +26,8 @@ class Logger
         ~Logger();
 
         void enableSyslog (bool enable = true);
+        // debug messages are printed only in verbose mode
+        void enableVerbose (bool enable = true);
 
         void logger(std::string const & text);
         void err(std::string const & text);
@@ -46,6 +48,7 @@ class Logger
         Logger();
 
         bool                m_syslog;
+        bool                m_verbose;
         std::stringstream   m_stream;
 };
 

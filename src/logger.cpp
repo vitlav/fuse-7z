@@ -24,7 +24,8 @@ volatile bool win32SyslogInitialized = false;
 #endif
 
 Logger::Logger() :
-        m_syslog (false)
+        m_syslog (false),
+        m_verbose (false)
 {
     #if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
     if(!win32SyslogInitialized){
@@ -55,13 +56,21 @@ Logger::enableSyslog (bool enable)
 }
 
 void
+Logger::enableVerbose (bool enable)
+{
+    m_verbose = enable;
+}
+
+void
 Logger::logger(std::string const & text)
 {
-	if (m_syslog) {
-		syslog(LOG_INFO, "%s", text.c_str());
-	}
-	else {
-		std::cerr << "fuse-7z: " << text << std::endl;
+	if (m_verbose) {
+		if (m_syslog) {
+			syslog(LOG_INFO, "%s", text.c_str());
+		}
+		else {
+			std::cerr << "fuse-7z: " << text << std::endl;
+		}
 	}
 	m_stream.str("");
 }
