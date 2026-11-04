@@ -21,6 +21,7 @@
 #include "fuse7z.h"
 #include "logger.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/types.h>
 
@@ -38,8 +39,13 @@ inline Fuse7z *get_data ()
 void *
 fuse7z_initlib (char const * archive, char const * cwd)
 {
-    void * lib = new Fuse7z(archive, cwd);
-    return lib;
+    try {
+        return new Fuse7z(archive, cwd);
+    }
+    catch (std::exception & e) {
+        Logger::instance().err(std::string("fuse-7z-ng: ") + e.what());
+        return nullptr;
+    }
 }
 
 void *
@@ -79,12 +85,15 @@ fuse7z_getattr (const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 
     memcpy(stbuf, &node->stat, sizeof(struct stat));
 
+    // permissions from the archive, if it has them
+    mode_t perm = node->stat.st_mode & 0777;
+    bool known = (node->stat.st_mode & S_IFMT) != 0;
     if (node->is_dir) {
-        stbuf->st_mode = S_IFDIR | 0755;
-        stbuf->st_nlink = 2 + node->childs.size();
-        stbuf->st_size = node->childs.size();
+        stbuf->st_mode = S_IFDIR | (known ? perm : 0755);
+        stbuf->st_nlink = static_cast<nlink_t>(2 + node->childs.size());
+        stbuf->st_size = static_cast<off_t>(node->childs.size());
     } else {
-        stbuf->st_mode = S_IFREG | 0644;
+        stbuf->st_mode = S_IFREG | (known ? perm : 0644);
         stbuf->st_nlink = 1;
     }
 
@@ -195,6 +204,9 @@ fuse7z_open (
     if (node->is_dir) {
         return -EISDIR;
     }
+    if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+        return -EROFS;
+    }
     fi->fh = (uint64_t)node;
 
     try {
@@ -204,7 +216,8 @@ fuse7z_open (
     catch (std::bad_alloc&) {
         return -ENOMEM;
     }
-    catch (std::runtime_error&) {
+    catch (std::runtime_error& e) {
+        Logger::instance().err(std::string("fuse-7z-ng: ") + e.what());
         return -EIO;
     }
 }

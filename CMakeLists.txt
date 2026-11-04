@@ -115,7 +115,13 @@ pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3>=3.2)
 
 set(CMake_Misc_Dir "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-file(GLOB_RECURSE SRCFILES "${Source_dir}/*.c" "${Source_dir}/*.cpp")
+set(SRCFILES
+    "${Source_dir}/fuse7z.cpp"
+    "${Source_dir}/fuse_functions.cpp"
+    "${Source_dir}/logger.cpp"
+    "${Source_dir}/main.cpp"
+    "${Source_dir}/node.cpp"
+)
 
 if(WINDOWS)
     #making resource file
@@ -154,15 +160,15 @@ if(WINDOWS)
     file(GLOB_RECURSE win_syslog_sources "${win_syslog_dir}/*.cpp" "${win_syslog_dir}/*.c")
 endif(WINDOWS)
 
-set(lib7zip_lib "${lib7zip_binDir}/lib7zip.a")
-message(STATUS "lib7zip lib is ${lib7zip_lib}")
-message(STATUS "lib7zip include dir is ${lib7zip_includeDir}")
+# the archive backend: 7-Zip command line tool and its output parser
+add_library(fuse7z_backend STATIC "${Source_dir}/listing.cpp" "${Source_dir}/sevenzip.cpp")
+target_include_directories(fuse7z_backend PUBLIC "${Source_dir}")
 
 add_executable(fuse_7z_ng "${SRCFILES}" "${HDRFILES}" "${win_syslog_sources}" "${resource_files}")
 set_target_properties(fuse_7z_ng PROPERTIES OUTPUT_NAME "${PACKAGE_NAME}")
-target_include_directories(fuse_7z_ng PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${lib7zip_includeDir}" "${win_syslog_dir}")
+target_include_directories(fuse_7z_ng PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${win_syslog_dir}")
 
-target_link_libraries(fuse_7z_ng ${lib7zip_lib} PkgConfig::FUSE3)
+target_link_libraries(fuse_7z_ng fuse7z_backend PkgConfig::FUSE3)
 
 if(WINDOWS)
     #for win_syslog

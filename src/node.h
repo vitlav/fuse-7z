@@ -54,6 +54,8 @@ class Node
 
         char const *name;
         std::string sname;
+        // name of the member in the archive, used for extraction
+        std::string archive_path;
         bool is_dir;
         int id;
         nodelist_t childs;

@@ -16,16 +16,29 @@
  */
 #include "node.h"
 #include "logger.h"
-#include "fuse7zstream.h"
+#include "listing.h"
+#include "sevenzip.h"
 
 #include <string>
-#include <lib7zip.h>
+
+/**
+ * Contents of an open member, extracted to an unlinked temporary file.
+ */
+class ExtractedFile : public NodeBuffer
+{
+	public:
+	explicit ExtractedFile(int fd) : fd(fd), refs(1) {}
+	virtual ~ExtractedFile();
+
+	int fd;
+	unsigned int refs;
+};
 
 class Fuse7z
 {
-	C7ZipLibrary lib;
-	C7ZipArchive * archive;
-	Fuse7zInStream stream;
+	SevenZip sevenzip;
+
+	void add_entry(ArchiveEntry const & entry);
 
 	public:
 	Fuse7z(std::string const & filename, std::string const & cwd);
@@ -43,5 +56,5 @@ class Fuse7z
 	std::string const archive_fn;
 	std::string const cwd;
 	Node * root_node;
+	struct stat archive_stat;
 };
-

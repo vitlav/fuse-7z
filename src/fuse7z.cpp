@@ -15,151 +15,185 @@
  * along with fuse-7z-ng.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "fuse7z.h"
-#include <assert.h>
 
-// move the implementation here
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <sstream>
+#include <stdexcept>
+
+#include <sys/stat.h>
+#include <unistd.h>
+
+ExtractedFile::~ExtractedFile()
+{
+    if (fd >= 0) {
+        ::close(fd);
+    }
+}
+
+static std::string
+absolute_path (std::string const & filename, std::string const & cwd)
+{
+    if (!filename.empty() && filename[0] == '/') {
+        return filename;
+    }
+    return cwd + "/" + filename;
+}
+
+static std::string
+first_line (std::string const & text)
+{
+    std::istringstream lines(text);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (line.find_first_not_of(" \t\r") != std::string::npos) {
+            return line;
+        }
+    }
+    return std::string();
+}
+
 Fuse7z::Fuse7z(std::string const & filename, std::string const & cwd) :
-         stream (filename),
-         archive_fn (filename),
+         archive_fn (absolute_path(filename, cwd)),
          cwd (cwd)
 {
     root_node = new Node(nullptr, "");
     root_node->is_dir = true;
 
     Logger &logger = Logger::instance ();
-    logger << "Initialization of fuse-7z with archive " << filename << Logger::endl;
-    
-    if (!lib.Initialize()) {
-        throw std::runtime_error("7z library initialization failed. Is the 7z.so/7z.dll folder in LD_LIBRARY_PATH?");
+    logger << "Initialization of fuse-7z with archive " << archive_fn << " using " << sevenzip.program() << Logger::endl;
+
+    if (stat(archive_fn.c_str(), &archive_stat) != 0) {
+        delete root_node;
+        throw std::runtime_error("cannot open " + archive_fn + ": " + strerror(errno));
     }
-    WStringArray exts;
+    root_node->stat.st_mtim = archive_stat.st_mtim;
+    root_node->stat.st_atim = archive_stat.st_atim;
+    root_node->stat.st_ctim = archive_stat.st_ctim;
 
-    if (!lib.GetSupportedExts(exts)) {
-        std::stringstream ss;
-        ss << "Could not get list of 7z-supported file extensions";
-        throw std::runtime_error(ss.str());
+    std::string output, errors;
+    int status = sevenzip.list(archive_fn, output, errors);
+    // 1 is a warning, the listing is still usable
+    if (status != 0 && status != 1) {
+        delete root_node;
+        std::string reason = first_line(errors);
+        throw std::runtime_error("cannot list " + archive_fn +
+                                 (reason.empty() ? std::string() : ": " + reason));
     }
 
+    std::istringstream listing(output);
+    std::vector<ArchiveEntry> entries = parse_7z_listing(listing);
+    logger << "Archive contains " << entries.size() << " entries" << Logger::endl;
+    for (ArchiveEntry const & entry : entries) {
+        add_entry(entry);
+    }
+}
 
-    logger << "Supported extensions : ";
-    size_t size = exts.size();
-    for(size_t i = 0; i < size; i++) {
-        std::wstring ext = exts[i];
+void Fuse7z::add_entry(ArchiveEntry const & entry) {
+    std::vector<std::string> components = split_archive_path(entry.path);
+    if (components.empty()) {
+        return;
+    }
 
-
-        for(size_t j = 0; j < ext.size(); j++) {
-            logger << (char)(ext[j] &0xFF);
+    Node * node = root_node;
+    for (size_t i = 0; i < components.size(); ++i) {
+        nodelist_t::iterator found = node->childs.find(components[i].c_str());
+        if (found != node->childs.end()) {
+            node = found->second;
+            continue;
         }
-        logger << " ";
-
+        Node * child = new Node(node, components[i].c_str());
+        node->childs[child->name] = child;
+        // implied parent directories get the time of the archive
+        child->is_dir = true;
+        child->stat.st_mtim = archive_stat.st_mtim;
+        child->stat.st_atim = archive_stat.st_atim;
+        child->stat.st_ctim = archive_stat.st_ctim;
+        node = child;
     }
-    logger << Logger::endl;
 
-
-    if (lib.OpenArchive(&stream, &archive)) {
-        unsigned int numItems = 0;
-
-        archive->GetItemCount(&numItems);
-
-        logger << "Archive contains " << numItems << " entries" << Logger::endl;
-        Node * node = 0;
-        for(unsigned int i = 0;i < numItems;i++) {
-            C7ZipArchiveItem * pArchiveItem = nullptr;
-            if (archive->GetItemInfo(i, &pArchiveItem)) {
-                std::wstring wpath(pArchiveItem->GetFullPath());
-                std::string path;
-                path.resize(wpath.length());
-                std::copy(wpath.begin(), wpath.end(), path.begin());
-                logger << "path is " << path <<Logger::endl;
-
-                node = root_node->insert(const_cast<char*>(path.c_str()));
-                node->id = i;
-
-                node->is_dir = pArchiveItem->IsDir();
-                logger << "node->is_dir " << node->is_dir <<Logger::endl;
-                
-                {
-                    unsigned long long size;
-                    pArchiveItem->GetUInt64Property(lib7zip::kpidSize, size);
-                    node->stat.st_size = size;
-                    logger << "node->stat.st_size " << node->stat.st_size <<Logger::endl;
-                }
-
-                {
-                    unsigned long long secpy, time, bias, gain;
-                    secpy = 31536000;
-                    gain = 10000000ULL;
-                    bias = secpy * gain * 369 + secpy * 2438356ULL + 5184000ULL;
-                    pArchiveItem->GetFileTimeProperty(lib7zip::kpidATime, time);
-                    node->stat.st_atime = (time - bias)/gain;
-                    #if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32)
-                    node->stat.st_atim.tv_nsec = ((time - bias) % gain) * 100;
-                    #endif
-                    pArchiveItem->GetFileTimeProperty(lib7zip::kpidCTime, time);
-                    node->stat.st_ctime = (time - bias)/gain;
-                    #if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32)
-                    node->stat.st_ctim.tv_nsec = ((time - bias) % gain) * 100;
-                    #endif
-                    pArchiveItem->GetFileTimeProperty(lib7zip::kpidMTime, time);
-                    node->stat.st_mtime = (time - bias)/gain;
-                    #if !defined(WIN32) && !defined(_WIN32) && !defined(__WIN32)
-                    node->stat.st_mtim.tv_nsec = ((time - bias) % gain) * 100;
-                    #endif
-                }
-            }
-
-            if (node && ((i+1) % 10000 == 0)) {
-                logger << "Indexed " << (i+1) << "th file : " << node->fullname() << Logger::endl;
-            }
-        }
+    node->is_dir = entry.is_dir;
+    node->archive_path = entry.path;
+    node->stat.st_size = entry.is_dir ? 0 : static_cast<off_t>(entry.size);
+    if (entry.type) {
+        node->stat.st_mode = (entry.is_dir ? S_IFDIR : S_IFREG) | entry.mode;
     }
-    else {
-        std::stringstream ss;
-        ss << "open archive " << archive_fn  << " failed" << std::endl;
-        throw std::runtime_error(ss.str());
+    if (entry.has_mtime) {
+        node->stat.st_mtim.tv_sec = entry.mtime;
+        node->stat.st_mtim.tv_nsec = entry.mtime_nsec;
+        node->stat.st_atim = node->stat.st_mtim;
+        node->stat.st_ctim = node->stat.st_mtim;
     }
 }
 
 Fuse7z::~Fuse7z() {
-    delete archive;
-    lib.Deinitialize();
-
     delete root_node;
 }
 
 void Fuse7z::open(char const * path, Node * node) {
     Logger &logger = Logger::instance ();
     logger << "Opening file " << path << "(" << node->fullname() << ")" << Logger::endl;
-    if(node->buffer != nullptr)
-        delete node->buffer;
-    Fuse7zOutStream * stream = new Fuse7zOutStream;
-    node->buffer = stream;
-    stream->SetSize(node->stat.st_size);
-    int id = node->id;
-    archive->Extract(id, stream);
+
+    ExtractedFile * file = dynamic_cast<ExtractedFile *>(node->buffer);
+    if (file) {
+        ++file->refs;
+        return;
+    }
+
+    char const * tmpdir = getenv("TMPDIR");
+    std::string temp = std::string(tmpdir && *tmpdir ? tmpdir : "/tmp") + "/fuse-7z-XXXXXX";
+    int fd = mkstemp(&temp[0]);
+    if (fd < 0) {
+        throw std::runtime_error("cannot create a temporary file in " + temp + ": " + strerror(errno));
+    }
+    // nobody else needs to see the extracted data
+    unlink(temp.c_str());
+    file = new ExtractedFile(fd);
+
+    std::string errors;
+    int status = sevenzip.extract(archive_fn, node->archive_path, fd, errors);
+    struct stat st;
+    if (status != 0 || fstat(fd, &st) != 0 || st.st_size != node->stat.st_size) {
+        delete file;
+        std::string reason = first_line(errors);
+        throw std::runtime_error("cannot extract " + node->archive_path +
+                                 (reason.empty() ? std::string() : ": " + reason));
+    }
+    node->buffer = file;
 }
 
 void Fuse7z::close(char const * path, Node * node) {
     Logger &logger = Logger::instance ();
     logger << "Closing file " << path << "(" << node->fullname() << ")" << Logger::endl;
-    Fuse7zOutStream * stream = dynamic_cast<Fuse7zOutStream*>(node->buffer);
-    delete stream;
-    node->buffer = nullptr;
+    ExtractedFile * file = dynamic_cast<ExtractedFile *>(node->buffer);
+    if (file && --file->refs == 0) {
+        delete file;
+        node->buffer = nullptr;
+    }
 }
 
 int Fuse7z::read(char const * path, Node * node, char * buf, size_t size, off_t offset) {
     Logger &logger = Logger::instance ();
-    logger << "Reading file " << path << "(" << node->fullname() << ") for " << size << " at " << offset << ", arch_id=" << node->id << Logger::endl;
-    Fuse7zOutStream * stream = dynamic_cast<Fuse7zOutStream*>(node->buffer);
+    logger << "Reading file " << path << "(" << node->fullname() << ") for " << size << " at " << offset << Logger::endl;
+    ExtractedFile * file = dynamic_cast<ExtractedFile *>(node->buffer);
+    if (!file) {
+        return -EBADF;
+    }
 
-    if(offset >= stream->buffer.size())
-        return 0;
-
-    if(stream->buffer.size() <= (offset + size))
-        size = stream->buffer.size() - offset;
-
-    assert(offset >= 0);
-    assert((offset + size) <= stream->buffer.size());
-    memcpy(buf, &stream->buffer[offset], size);
-    return size;
+    size_t done = 0;
+    while (done < size) {
+        ssize_t count = pread(file->fd, buf + done, size - done, offset + static_cast<off_t>(done));
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -errno;
+        }
+        if (count == 0) {
+            break;
+        }
+        done += static_cast<size_t>(count);
+    }
+    return static_cast<int>(done);
 }
