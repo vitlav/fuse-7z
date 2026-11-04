@@ -34,6 +34,7 @@ Node::Node (Node * parent, char const * name) :
 {
     buffer = nullptr;
     this->name = sname.c_str();
+    memset(&stat, 0, sizeof(stat));
     stat.st_ino = max_inode++;
 }
 
@@ -116,11 +117,8 @@ Node::find(char const * path)
     } while(*path2++);
 
     if (sub) {
-        char pouet[255];
-        strncpy(pouet, path, path2-path);
-        pouet[path2-path] = '\0';
-        //cout << "Checking for " << pouet << " in subdirs..." << flush;
-        nodelist_t::iterator i = childs.find(pouet);
+        std::string component(path, static_cast<size_t>(path2 - path));
+        nodelist_t::iterator i = childs.find(component.c_str());
         if (i != childs.end()) {
             Node * child = i->second;
             path2++;
