@@ -208,3 +208,8 @@ if(MSVC)
 endif(MSVC)
 
 install(TARGETS fuse_7z_ng RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
