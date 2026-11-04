@@ -43,9 +43,11 @@ fuse7z_initlib (char const * archive, char const * cwd)
 }
 
 void *
-fuse7z_init (struct fuse_conn_info *conn)
+fuse7z_init (struct fuse_conn_info *conn, struct fuse_config *cfg)
 {
     (void) conn;
+    // the archive never changes while it is mounted
+    cfg->kernel_cache = 1;
     Fuse7z *data = get_data();
     return data;
 }
@@ -59,8 +61,9 @@ fuse7z_destroy (void *_data)
 }
 
 int
-fuse7z_getattr (const char *path, FUSE_STAT *stbuf)
+fuse7z_getattr (const char *path, struct stat *stbuf, struct fuse_file_info *fi)
 {
+    (void) fi;
     Fuse7z *data = get_data();
 
     if (*path == '\0') {
@@ -108,8 +111,12 @@ fuse7z_readdir (
         void                    *buf,
         fuse_fill_dir_t          filler,
         off_t                    offset,
-        struct fuse_file_info   *fi)
+        struct fuse_file_info   *fi,
+        enum fuse_readdir_flags  flags)
 {
+    (void) offset;
+    (void) fi;
+    (void) flags;
     Fuse7z *data = get_data();
 
     if (*path == '\0') {
@@ -125,11 +132,13 @@ fuse7z_readdir (
 
     //Logger::instance().logger(node->fullname());
 
-    filler(buf, ".", nullptr, 0);
-    filler(buf, "..", nullptr, 0);
+    // FUSE_FILL_DIR_DEFAULTS is only defined since libfuse 3.17
+    fuse_fill_dir_flags const fill_flags = static_cast<fuse_fill_dir_flags>(0);
+    filler(buf, ".", nullptr, 0, fill_flags);
+    filler(buf, "..", nullptr, 0, fill_flags);
     for (nodelist_t::const_iterator i = node->childs.begin(); i != node->childs.end(); ++i) {
         Node * node = i->second;
-        filler(buf, node->name, nullptr, 0);
+        filler(buf, node->name, nullptr, 0, fill_flags);
     }
 
     return 0;
@@ -245,14 +254,7 @@ int fuse7z_release (const char *path, struct fuse_file_info *fi) {
 }
 
 int
-fuse7z_ftruncate (
-        const char *path, off_t offset, struct fuse_file_info *fi)
-{
-    return -ENOTSUP;
-}
-
-int
-fuse7z_truncate (const char *path, off_t offset)
+fuse7z_truncate (const char *path, off_t offset, struct fuse_file_info *fi)
 {
     return -ENOTSUP;
 }
@@ -276,14 +278,15 @@ fuse7z_mkdir (const char *path, mode_t mode)
 }
 
 int
-fuse7z_rename (const char *path, const char *new_path)
+fuse7z_rename (const char *path, const char *new_path, unsigned int flags)
 {
     return -ENOTSUP;
 }
 
 int
-fuse7z_utimens (const char *path, const struct timespec tv[2])
+fuse7z_utimens (const char *path, const struct timespec tv[2], struct fuse_file_info *fi)
 {
+    (void) fi;
     Fuse7z *data = get_data();
     if (*path == '\0') {
         return -ENOENT;
@@ -333,13 +336,13 @@ fuse7z_removexattr (const char *, const char *)
 }
 
 int
-fuse7z_chmod (const char *, mode_t)
+fuse7z_chmod (const char *, mode_t, struct fuse_file_info *)
 {
     return -ENOTSUP;
 }
 
 int
-fuse7z_chown (const char *, uid_t, gid_t)
+fuse7z_chown (const char *, uid_t, gid_t, struct fuse_file_info *)
 {
     return -ENOTSUP;
 }

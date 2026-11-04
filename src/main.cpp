@@ -17,7 +17,6 @@
 #include "config.h"
 
 #include <fuse.h>
-#include <fuse_opt.h>
 
 #include <cstdio>
 #include <cstring>
@@ -77,7 +76,7 @@ struct fuse7z_param
     // verbosity
     int verbose;
     int automake;
-    char mountpoint[4096];
+    const char *mountpoint;
 } param;
 
 enum key:uint8_t{
@@ -152,7 +151,7 @@ process_arg (
                             return DISCARD;
                         }
                 case 2: {
-                            strcpy(param->mountpoint, arg);
+                            param->mountpoint = arg;
                             return KEEP;
                         }
                 default:
@@ -171,9 +170,6 @@ main (int argc, char **argv)
     struct fuse_args args = FUSE_ARGS_INIT (argc, argv);
     void * data;
 
-    char *mountpoint;
-    int multithreaded;  // this flag ignored because libzip does not supports multithreading
-    int res;
     if (fuse_opt_parse (&args, &param, fuse7z_opts, (fuse_opt_proc_t)process_arg))
     {
         fuse_opt_free_args(&args);
@@ -208,7 +204,7 @@ main (int argc, char **argv)
         return 5;
     }
 
-    if (param.automake)
+    if (param.automake && param.mountpoint)
     {
         #if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
             mkdir(param.mountpoint);
@@ -218,7 +214,7 @@ main (int argc, char **argv)
         
     }
 
-    struct fuse_operations fuse7z_oper = {0};
+    struct fuse_operations fuse7z_oper = {};
     fuse7z_oper.init = fuse7z_init;
     fuse7z_oper.destroy = fuse7z_destroy;
     fuse7z_oper.readdir = fuse7z_readdir;
@@ -242,29 +238,18 @@ main (int argc, char **argv)
     fuse7z_oper.releasedir = fuse7z_releasedir;
     fuse7z_oper.access = fuse7z_access;
     fuse7z_oper.utimens = fuse7z_utimens;
-    #if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
-        #undef ftruncate
-    #endif
-    fuse7z_oper.ftruncate = fuse7z_ftruncate;
     fuse7z_oper.truncate = fuse7z_truncate;
     fuse7z_oper.setxattr = fuse7z_setxattr;
     fuse7z_oper.getxattr = fuse7z_getxattr;
     fuse7z_oper.listxattr = fuse7z_listxattr;
     fuse7z_oper.removexattr = fuse7z_removexattr;
-    struct fuse * fuse = fuse_setup (
-                args.argc, args.argv,
-                &fuse7z_oper, sizeof(fuse7z_oper),
-                &mountpoint, &multithreaded, data);
+
+    // the archive backend is not thread safe, use the single threaded loop
+    fuse_opt_add_arg(&args, "-s");
+
+    int res = fuse_main(args.argc, args.argv, &fuse7z_oper, data);
 
     fuse_opt_free_args(&args);
-    if (fuse == nullptr)
-    {
-        return 7;
-    }
-
-    res = fuse_loop(fuse);
-
-    fuse_teardown(fuse, mountpoint);
 
     #if 0
     // automake must not do 'remove' operation

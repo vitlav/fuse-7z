@@ -110,15 +110,8 @@ CHECK_INCLUDE_FILES("sys/types.h;sys/stat.h;unistd.h" NEEDED_HEADERS_PRESENT LAN
 
 set(Source_dir "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-find_package(PkgConfig)
-
-if(PkgConfig_FOUND)
-	pkg_check_modules(FUSE REQUIRED fuse)
-else(PkgConfig_FOUND)
-	find_package(FUSE REQUIRED)
-endif()
-
-#add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3>=3.2)
 
 set(CMake_Misc_Dir "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -149,7 +142,7 @@ set(CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/${CONFIG_FILENAME}")
 mark_as_advanced(CONFIG_FILE)
 set(CONFIG_FILE_PROTO "${CMake_Misc_Dir}/${CONFIG_FILENAME}.in")
 
-set(FUSE_USE_VERSION 28 CACHE INTEGER "Service name")
+set(FUSE_USE_VERSION 31 CACHE STRING "FUSE API version")
 set(fuse_7z_ng_PACKAGE_NAME "${PACKAGE_NAME}" CACHE STRING "Service name")
 set(fuse_7z_ng_STANDARD_BLOCK_SIZE 512 CACHE STRING "Block size")
 
@@ -167,9 +160,9 @@ message(STATUS "lib7zip include dir is ${lib7zip_includeDir}")
 
 add_executable(fuse_7z_ng "${SRCFILES}" "${HDRFILES}" "${win_syslog_sources}" "${resource_files}")
 set_target_properties(fuse_7z_ng PROPERTIES OUTPUT_NAME "${PACKAGE_NAME}")
-target_include_directories(fuse_7z_ng PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${lib7zip_includeDir}" "${win_syslog_dir}" "${FUSE_INCLUDE_DIR}")
+target_include_directories(fuse_7z_ng PUBLIC "${CMAKE_CURRENT_BINARY_DIR}" "${lib7zip_includeDir}" "${win_syslog_dir}")
 
-target_link_libraries(fuse_7z_ng ${lib7zip_lib} "${FUSE_LIBRARIES}")
+target_link_libraries(fuse_7z_ng ${lib7zip_lib} PkgConfig::FUSE3)
 
 if(WINDOWS)
     #for win_syslog
