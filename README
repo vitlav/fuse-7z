@@ -1,8 +1,9 @@
 fuse-7z-ng
 ==========
 
-fuse-7z-ng is a FUSE file system that uses the p7zip
-library to access all archive formats supported by 7-zip.
+fuse-7z-ng is a FUSE 3 file system that mounts an archive read-only,
+for every archive format the 7-Zip command line tool can list and
+extract: 7z, zip, tar, rar, cpio, iso, cab, rpm, deb and many more.
 
 This project is a fork of fuse-7z ( https://gitorious.org/fuse-7z/fuse-7z ).
 Original author: Jérôme Carretero <cJ-7z@zougloub.eu>
@@ -24,43 +25,90 @@ Usage
 
 Mounting an archive with fuse-7z-ng is like mounting another typical FUSE
 filesystem:
-$ ./fuse-7z-ng --automount foobar.zip ~/mount
+$ fuse-7z-ng --automount foobar.zip ~/mount
 
 Note: --automount makes the target folder if not present.
 
 Then do something with the mounted file system, and unmount:
 
-$ fusermount -u ~/mount
+$ fusermount3 -u ~/mount
 
-See the FUSE documentation for details.
+Options:
+
+    -v, --verbose   print debug messages
+    -f              stay in the foreground
+    -d              FUSE debug output, implies -f and --verbose
+    --syslog        log to syslog instead of stderr
+    -o OPT[,OPT...] FUSE mount options, see mount.fuse3(8)
+
+The file system is always mounted read-only.
+
+The archive is listed once when it is mounted. A member is extracted
+by the 7-Zip tool when it is opened, into an unlinked temporary file in
+$TMPDIR (/tmp by default), and the file is dropped when the last open
+handle of the member is closed. Keep this in mind for large members if
+/tmp is a tmpfs.
+
+Archive members are untrusted: members with absolute names or ".."
+components, symbolic and hard links, devices, FIFOs and sockets are not
+shown, and their number is printed at mount time. Permissions and
+modification times are taken from the archive when it stores them.
+
+Requirements
+============
+
+* Linux (or another system with FUSE 3 and posix_spawn)
+* libfuse 3.2 or newer and fusermount3
+* one of the 7-Zip command line tools, found at run time in PATH:
+  7zz (7-Zip), 7z (7-Zip or p7zip) or 7za.
+  Set FUSE_7Z_PROGRAM to use another one, for example
+  FUSE_7Z_PROGRAM=/opt/7zip/7zz.
+
+fuse-7z-ng does not link with lib7zip or p7zip anymore; the 7-Zip tool
+is run as a separate process without a shell.
 
 Building
 ========
 
-You need CMake for building.
-And you need to build lib7zip separately and provide CMake with the links to include and the lib. You may use https://github.com/KOLANICH/lib7zip for this, it contains some improved CMake scripts.
+You need CMake 3.12 or newer, a C++17 compiler, pkg-config and the
+FUSE 3 development files, for example:
 
-Issues
+  Debian, Ubuntu:  apt install cmake g++ pkg-config libfuse3-dev fuse3 7zip
+  Fedora:          dnf install cmake gcc-c++ pkgconf fuse3-devel fuse3 7zip
+
+Then:
+
+$ cmake -S . -B build
+$ cmake --build build
+$ sudo cmake --install build
+
+Tests
+=====
+
+$ ctest --test-dir build --output-on-failure
+
+* listing, sevenzip: unit tests of the 7-Zip output parser, the checks
+  of member names and how the 7-Zip tool is started. They need nothing
+  but the compiler.
+* backend: lists and extracts real 7z and zip archives with the 7-Zip
+  tool, skipped without it.
+* integration: mounts archives with FUSE and compares them with their
+  source files, checks that unsafe members are not shown. It is skipped
+  without /dev/fuse, fusermount3 or the 7-Zip tool, for example in
+  build chroots and containers.
+
+Configure with -DBUILD_TESTING=OFF to skip building the tests.
+
+Status
 ======
 
-Currently it crashes on Windows with Buffer Overflow Exception. Under debugging it doesn't, but returns some nonsense like files sizes of exabytes.
+Only reads are supported, and there are no plans for writes: there is
+no sane way to update big archives in place.
 
 Note that extension auto-detection (by magic) seems to have issues,
 but you can work around that by creating symlinks with proper extensions::
 $ ln -sf "[Contents]" $TMP/initrd-contents.cpio
 $ fuse-7z-ng --automount $TMP/initrd-contents.cpio ~/mnt/initrd-contents
 
-Status
-======
-
-Currently, the code is a tiny glue layer between FUSE and lib7zip,
-allowing for read access in archives.
-The design is very basic, and the code is in a proof of concept stage,
-which is not optimal but seems OK for the moment, to read archives.
-All the properties of all the files in the archive are read at initialization.
-But it happens to be quite fast, even for huge archives with hundreds
-of thousands of files.
-Only reads are planned at the moment, as the lib7zip library only supports them.
-Writes will come later, if they come : I have no idea on how to perform optimal
-writes on big archives, and I don't know any real (sane) use case of writing
-in archives.
+Encrypted archives are not supported yet: 7-Zip is given an empty
+password, so encrypted members can not be read.
